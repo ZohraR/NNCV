@@ -19,6 +19,7 @@ The packages that need to be installed are:
 - ultralytics-thop  
   - Install with:  
     ```bash
+    pip install ultralytics-thop
     pip install --upgrade git+https://github.com/ultralytics/thop.git
     ```
 
@@ -26,7 +27,7 @@ The packages that need to be installed are:
 
 ## How to run the models
 
-To train/run the models, the following line in the `train.py` file should be changed:
+To train/run the models, the following line in the `train.py` file should be changed to the desired model:
 
 ```python
 from ... import Model, he_initialization
