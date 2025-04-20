@@ -1,5 +1,5 @@
-CodaLab username: ZohraR
-Emailadress: z.rasuli@student.tue.nl
+CodaLab username: ZohraR <br>
+Email adress: z.rasuli@student.tue.nl
 
 # README
 
