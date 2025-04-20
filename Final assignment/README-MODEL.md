@@ -32,7 +32,8 @@ To train/run the models, the following line in the `train.py` file should be cha
 ```python
 from ... import Model, he_initialization
 
-    
+```
+The models that can be opted are: unet.py, ResUnet.py and Efficient_Unet.py.    
 
 
 
