@@ -1,5 +1,12 @@
 import torch
 import torch.nn as nn
+import torch.nn.init as init
+from torch.nn.utils.parametrizations import orthogonal
+
+# from torchvision import models
+# from torchinfo import summary
+# from thop import profile
+
 
 
 class Model(nn.Module):
@@ -124,4 +131,16 @@ class OutConv(nn.Module):
 
     def forward(self, x):
         return self.conv(x)
-
+    
+# def orthogonal_w_init(model):
+#     for layer in model.modules():
+#         if isinstance(layer, (nn.Conv2d, nn.Linear)):
+#             orthogonal(layer, "weight")
+#             if layer.bias is not None:
+#                 nn.init.zeros_(layer.bias)
+def he_initialization(model):
+    for layer in model.modules():
+        if isinstance(layer, (nn.Conv2d, nn.Linear)):
+            init.kaiming_normal_(layer.weight, mode='fan_out', nonlinearity='relu')
+            if layer.bias is not None:
+                init.zeros_(layer.bias)

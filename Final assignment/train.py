@@ -28,9 +28,10 @@ from torchvision.transforms.v2 import (
     Resize,
     ToImage,
     ToDtype,
+    RandomHorizontalFlip, 
+    ColorJitter
 )
-
-from model import Model
+from Eff_Unet import Model, he_initialization
 
 
 
@@ -69,6 +70,40 @@ def get_args_parser():
 
     return parser
 
+def dice_coefficient(preds, targets, num_classes=19, ignore_index=255):
+    """
+    Computes the mean Dice Score for a batch.
+    
+    Args:
+        preds (torch.Tensor): Predictions (Batch, H, W)
+        targets (torch.Tensor): Ground truth labels (Batch, H, W)
+        num_classes (int): Number of segmentation classes.
+        ignore_index (int): Label to ignore (e.g., 255 in Cityscapes).
+    
+    Returns:
+        float: Mean Dice Score across all classes.
+    """
+    dice_per_class = []
+
+    for class_id in range(num_classes):
+        if class_id == ignore_index:
+            continue  # Skip ignored class
+
+        pred_mask = preds == class_id  # Binary mask for predicted class
+        target_mask = targets == class_id  # Binary mask for true class
+
+        intersection = (pred_mask & target_mask).sum().float()
+        union = pred_mask.sum().float() + target_mask.sum().float()
+
+        if union > 0:
+            dice_per_class.append((2. * intersection) / union)
+
+    return torch.mean(torch.stack(dice_per_class))
+
+
+#def CEDice_combined(CrossEntropy, DiceLoss):
+
+
 
 def main(args):
     # Initialize wandb for logging
@@ -95,6 +130,8 @@ def main(args):
     transform = Compose([
         ToImage(),
         Resize((256, 256)),
+        #RandomHorizontalFlip(p=0.5),
+        #ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
         ToDtype(torch.float32, scale=True),
         Normalize((0.5,), (0.5,)),
     ])
@@ -139,9 +176,13 @@ def main(args):
 
     # Define the loss function
     criterion = nn.CrossEntropyLoss(ignore_index=255)  # Ignore the void class
+    #criterion = DiceBCELoss(ignore_index=225)
 
     # Define the optimizer
     optimizer = AdamW(model.parameters(), lr=args.lr)
+
+    # Initialization of weights
+    he_initialization(model)
 
     # Training loop
     best_valid_loss = float('inf')
@@ -160,13 +201,22 @@ def main(args):
 
             optimizer.zero_grad()
             outputs = model(images)
-            loss = criterion(outputs, labels)
+            CE_loss = criterion(outputs,labels)
+
+            predictions = outputs.softmax(1).argmax(1)
+            predictions = predictions.unsqueeze(1)
+            labels = labels.unsqueeze(1)
+            dice_meancoeff = dice_coefficient(predictions, labels, num_classes=19, ignore_index=225)
+            dice_loss = 1 - dice_meancoeff
+            loss = CE_loss + dice_loss
             loss.backward()
+
             optimizer.step()
 
             wandb.log({
                 "train_loss": loss.item(),
                 "learning_rate": optimizer.param_groups[0]['lr'],
+                "dice_coefficient": dice_meancoeff,
                 "epoch": epoch + 1,
             }, step=epoch * len(train_dataloader) + i)
             
@@ -174,6 +224,8 @@ def main(args):
         model.eval()
         with torch.no_grad():
             losses = []
+            dice_scores = []
+
             for i, (images, labels) in enumerate(valid_dataloader):
 
                 labels = convert_to_train_id(labels)  # Convert class IDs to train IDs
@@ -185,11 +237,15 @@ def main(args):
                 loss = criterion(outputs, labels)
                 losses.append(loss.item())
             
+            
                 if i == 0:
                     predictions = outputs.softmax(1).argmax(1)
 
                     predictions = predictions.unsqueeze(1)
                     labels = labels.unsqueeze(1)
+
+                    dice = dice_coefficient(predictions, labels, num_classes=19, ignore_index=255).item()
+                    dice_scores.append(dice)
 
                     predictions = convert_train_id_to_color(predictions)
                     labels = convert_train_id_to_color(labels)
@@ -206,9 +262,14 @@ def main(args):
                     }, step=(epoch + 1) * len(train_dataloader) - 1)
             
             valid_loss = sum(losses) / len(losses)
+            mean_dice_score = sum(dice_scores) / len(dice_scores)
+
             wandb.log({
-                "valid_loss": valid_loss
+                "valid_loss": valid_loss,
+                "dice_score": mean_dice_score
             }, step=(epoch + 1) * len(train_dataloader) - 1)
+
+            print("Validation Loss: {valid_loss:.4f}, Dice score: {mean_dice_score:.4f}")
 
             if valid_loss < best_valid_loss:
                 best_valid_loss = valid_loss
